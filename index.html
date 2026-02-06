@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta charset="UTF-8">
+<title>等速円運動最終ver</title>
+<style>
+#nextBtn {
+    position: absolute;
+    top: 10px;
+    left: 420px;
+    padding: 4px 10px;
+    font-size: 14px;
+    background: #1e90ff;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+}
+#nextBtn:hover {
+    background: #63b3ff;
+}
+
+body { margin:0; overflow:hidden; background:#0e0f13; color:white; font-family:Segoe UI; }
+canvas { display:block; }
+label { position:absolute; top:10px; left:10px; font-size:18px; color:white; z-index:10; }
+#speedLabel { left:220px; }
+</style>
+</head>
+<body>
+
+<label>半径: <input id="radiusSlider" type="range" min="50" max="300" value="130"></label>
+<label id="speedLabel">速度: <input id="speedSlider" type="range" min="0" max="0.1" step="0.001" value="0.025"></label>
+
+
+
+<canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+
+function resizeCanvas(){
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+window.addEventListener("resize", resizeCanvas);
+resizeCanvas();
+
+
+const radiusSlider = document.getElementById("radiusSlider");
+const speedSlider = document.getElementById("speedSlider");
+
+let r = parseFloat(radiusSlider.value);
+
+//これが一番いい速度だから変えるな
+let speed = parseFloat(speedSlider.value);
+
+radiusSlider.oninput = () => { r = parseFloat(radiusSlider.value); };
+speedSlider.oninput = () => { speed = parseFloat(speedSlider.value); };
+
+let cx = canvas.width/2;
+let cy = canvas.height/2;
+let dragging = false;
+
+canvas.addEventListener("mousedown", e=>{
+    const dx = e.offsetX - cx;
+    const dy = e.offsetY - cy;
+    if(Math.sqrt(dx*dx + dy*dy) < r+20) dragging = true;
+});
+canvas.addEventListener("mousemove", e=>{
+    if(dragging){ cx = e.offsetX; cy = e.offsetY; }
+});
+canvas.addEventListener("mouseup", e=>{ dragging=false; });
+
+let theta = 0;
+let sinWave = [];
+let cosWave = [];
+
+//この背景めっちゃ時間かかったしこれからもここは他のに使うのもあり？かも知らんけど
+let stars = [];
+function createStars(){
+    stars = [];
+    const starColors = ["255,255,255","200,220,255","255,240,200"];
+    for(let i=0;i<300;i++){
+        stars.push({
+            x: Math.random()*canvas.width,
+            y: Math.random()*canvas.height,
+            r: Math.random()*1.2+0.3,
+            alpha: 0.3 + Math.random()*0.7,
+            delta: 0.005 + Math.random()*0.015,
+            color: starColors[Math.floor(Math.random()*starColors.length)]
+        });
+    }
+}
+createStars();
+
+function drawBackground(){
+    const grad = ctx.createLinearGradient(0,0,0,canvas.height);
+    grad.addColorStop(0,"#0c0c1e");
+    grad.addColorStop(0.5,"#0b1a3f");
+    grad.addColorStop(1,"#000010");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    for(const s of stars){
+        s.alpha += s.delta;
+        if(s.alpha>1){ s.alpha=1; s.delta*=-1; }
+        if(s.alpha<0.2){ s.alpha=0.2; s.delta*=-1; }
+        ctx.fillStyle = `rgba(${s.color},${s.alpha})`;
+        ctx.beginPath();
+        ctx.arc(s.x,s.y,s.r,0,Math.PI*2);
+        ctx.fill();
+    }
+}
+
+
+function dot(x, y, c, s=7){
+    ctx.fillStyle = c;
+    ctx.beginPath();
+    ctx.arc(x, y, s, 0, Math.PI*2);
+    ctx.fill();
+}
+
+//ここはあえて°じゃなくて弧度法で表しとく
+function radLabelPiFraction(deg){
+    const labels = {
+        0:"0",30:"π/6",45:"π/4",60:"π/3",90:"π/2",
+        120:"2π/3",135:"3π/4",150:"5π/6",180:"π",
+        210:"7π/6",225:"5π/4",240:"4π/3",270:"3π/2",
+        300:"5π/3",315:"7π/4",330:"11π/6",360:"2π"
+    };
+    return labels[deg]||"";
+}
+
+function drawAngleMarks(){
+    for(let deg=0; deg<=360; deg+=10){
+        const rad = deg * Math.PI / 180;
+        const innerR = r - (deg % 30 === 0 ? 12 : 6); 
+        const outerR = r;
+        const x1 = cx + innerR * Math.cos(rad);
+        const y1 = cy - innerR * Math.sin(rad);
+        const x2 = cx + outerR * Math.cos(rad);
+        const y2 = cy - outerR * Math.sin(rad);
+        ctx.strokeStyle = (deg % 90 === 0) ? "#ffb84d" : "#888";
+        ctx.lineWidth = (deg % 90 === 0) ? 3 : 1;
+        ctx.beginPath();
+        ctx.moveTo(x1,y1);
+        ctx.lineTo(x2,y2);
+        ctx.stroke();
+
+        const label = radLabelPiFraction(deg);
+        if(label){
+            ctx.fillStyle="#ffb84d";
+            ctx.font="20px Segoe UI";
+            const tx = cx + (r + 30) * Math.cos(rad);
+            const ty = cy - (r + 30) * Math.sin(rad) + 7;
+            ctx.fillText(label, tx-20, ty);
+        }
+    }
+}
+
+//見えやすいように左上まで移す
+function drawSinCosHistory(){
+    const x0 = 20, y0 = 60, w = 300, h = 180; 
+    ctx.fillStyle = "rgba(30,30,30,0.7)";
+    ctx.fillRect(x0, y0, w, h);
+
+    ctx.strokeStyle = "#4da6ff";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for(let i=0;i<sinWave.length;i++){
+        const xi = x0 + w - i*(w/200);
+        const yi = y0 + h/2 - sinWave[i]/r * h/2;
+        if(i===0) ctx.moveTo(xi, yi);
+        else ctx.lineTo(xi, yi);
+    }
+    ctx.stroke();
+
+    ctx.strokeStyle = "#5dff7a";
+    ctx.beginPath();
+    for(let i=0;i<cosWave.length;i++){
+        const xi = x0 + w - i*(w/200);
+        const yi = y0 + h/2 - cosWave[i]/r * h/2;
+        if(i===0) ctx.moveTo(xi, yi);
+        else ctx.lineTo(xi, yi);
+    }
+    ctx.stroke();
+
+    ctx.fillStyle="#4da6ff"; ctx.font="16px Segoe UI"; ctx.fillText("sinθ", x0+5, y0+20);
+    ctx.fillStyle="#5dff7a"; ctx.fillText("cosθ", x0+5, y0+40);
+}
+
+function drawUnitCircleTriangle(){
+    const x0 = 400, y0 = 60; 
+    const ur = 100; 
+
+    ctx.strokeStyle="#ffffff";
+    ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.arc(x0+ur, y0+ur, ur, 0, Math.PI*2);
+    ctx.stroke();
+
+    ctx.strokeStyle="#888";
+    ctx.lineWidth=3; 
+    ctx.beginPath();
+    ctx.moveTo(x0+ur-ur-10, y0+ur);
+    ctx.lineTo(x0+ur+ur+10, y0+ur);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x0+ur, y0+ur-ur-10);
+    ctx.lineTo(x0+ur, y0+ur+ur+10);
+    ctx.stroke();
+
+    const px = x0+ur + ur * Math.cos(theta);
+    const py = y0+ur - ur * Math.sin(theta);
+    dot(px, py, "#ff2e2e", 8);
+
+    ctx.strokeStyle="#ff2e2e";
+    ctx.lineWidth=3;
+    ctx.beginPath();
+    ctx.moveTo(x0+ur, y0+ur);
+    ctx.lineTo(px, y0+ur);
+    ctx.lineTo(px, py);
+    ctx.closePath();
+    ctx.stroke();
+
+    ctx.fillStyle="#5dff7a"; 
+    ctx.font="16px Segoe UI";
+    ctx.fillText("cosθ", (x0+ur+px)/2 - 15, y0+ur + 15);
+    ctx.fillStyle="#4da6ff"; 
+    ctx.fillText("sinθ", px + 5, (y0+ur+py)/2);
+}
+
+function thetaLabel(theta){
+    const pi = Math.PI;
+    const frac = theta/pi;
+    if(Math.abs(frac-Math.round(frac))<0.01) return Math.round(frac)+"rad";
+    else return frac.toFixed(2)+"rad";
+}
+
+function animate(){
+    drawBackground(); 
+
+    ctx.strokeStyle="#ccc";
+    ctx.lineWidth=4;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI*2);
+    ctx.stroke();
+
+    drawAngleMarks();
+
+    const x = cx + r*Math.cos(theta);
+    const y = cy - r*Math.sin(theta);
+    dot(x,y,"#ff2e2e",13);
+
+    const sinBarX = cx - r - 150; 
+    ctx.strokeStyle="#ff2e2e";
+    ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(sinBarX, y);
+    ctx.stroke();
+
+    ctx.strokeStyle="#4da6ff";
+    ctx.lineWidth=1;
+    ctx.beginPath();
+    ctx.moveTo(sinBarX, cy-r-50);
+    ctx.lineTo(sinBarX, cy+r+50);
+    ctx.stroke();
+    dot(sinBarX, y, "#4da6ff",12);
+
+    // 本当は時間軸で管理したかったけど、見た目優先で配列にしてる
+    sinWave.unshift(y-cy);
+    if(sinWave.length>2000) sinWave.pop(); 
+    ctx.strokeStyle="#4da6ff";
+    ctx.lineWidth=2.5;
+    ctx.beginPath();
+    for(let i=0;i<sinWave.length;i++){
+        ctx.lineTo(sinBarX-i, cy+sinWave[i]);
+    }
+    ctx.stroke();
+
+    const cosBarY = cy - r - 150; 
+    ctx.strokeStyle="#ff2e2e";
+    ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x, cosBarY);
+    ctx.stroke();
+
+    ctx.strokeStyle="#5dff7a";
+    ctx.lineWidth=1;
+    ctx.beginPath();
+    ctx.moveTo(cx-r-50, cosBarY);
+    ctx.lineTo(cx+r+50, cosBarY);
+    ctx.stroke();
+    dot(x, cosBarY, "#5dff7a",12);
+
+    cosWave.unshift(x-cx);
+    if(cosWave.length>800) cosWave.pop(); 
+    ctx.strokeStyle="#5dff7a";
+    ctx.lineWidth=2.5;
+    ctx.beginPath();
+    for(let i=0;i<cosWave.length;i++){
+        ctx.lineTo(cx+cosWave[i], cosBarY-i);
+    }
+    ctx.stroke();
+
+    ctx.font="26px Segoe UI";
+    ctx.fillStyle="#4da6ff";
+    ctx.fillText("y = sinθ", sinBarX-180, cy-r-85);
+    ctx.fillStyle="#5dff7a";
+    ctx.fillText("x = cosθ", cx+r+55, cosBarY-50);
+
+// let debugTheta = 0; // これなんか使いたかったけど使えなかった😢maybeまた今度
+    ctx.font="22px Segoe UI";
+    ctx.fillStyle="#ffffff";
+    ctx.fillText("θ = " + thetaLabel(theta), cx + r + 50, cy - r - 90);
+    ctx.fillStyle="#4da6ff";
+    ctx.fillText("= " + Math.sin(theta).toFixed(2), sinBarX-60, cy-r-85);
+    ctx.fillStyle="#5dff7a";
+    ctx.fillText("= " + Math.cos(theta).toFixed(2), cx + r + 150, cosBarY-50);
+
+    drawSinCosHistory();
+    drawUnitCircleTriangle();
+
+    theta += speed;
+    requestAnimationFrame(animate);
+}
+
+animate();
+
+document.getElementById("nextBtn").addEventListener("click", () => {
+    window.location.href = "next.html";
+});
+
+</script>
+</body>
+</html>
